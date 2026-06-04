@@ -62,6 +62,37 @@ const PROJECT_BUDGET: Record<Project, { total: number; used: number } | null> = 
   "Internal / Admin": null, "Client Workshop": { total: 16, used: 5 },
 };
 
+const PROJECT_TASKS: Record<Project, string[]> = {
+  "Project Alpha":    ["Frontend Development", "Backend Development", "Code Review", "Bug Fixes", "Planning"],
+  "Project Beta":     ["Feature Work", "Testing", "Documentation", "Sprint Tasks"],
+  "Internal / Admin": ["Standup", "Team Meeting", "Admin", "Training", "1:1"],
+  "Client Workshop":  ["Preparation", "Facilitation", "Follow-up", "Materials"],
+};
+
+// Coworkers who already logged similar entries (for nudge hints)
+const COWORKER_NUDGES: Partial<Record<DayKey, Array<{ coworker: string; avatar: string; project: Project; task: string; hours: number }>>> = {
+  Mon: [
+    { coworker: "Sarah K.", avatar: "SK", project: "Internal / Admin", task: "Standup", hours: 0.5 },
+    { coworker: "Tom H.",   avatar: "TH", project: "Project Alpha",    task: "Planning", hours: 1.5 },
+  ],
+  Tue: [
+    { coworker: "Sarah K.", avatar: "SK", project: "Internal / Admin", task: "Standup", hours: 0.5 },
+    { coworker: "Mia L.",   avatar: "ML", project: "Client Workshop",  task: "Facilitation", hours: 1 },
+  ],
+  Wed: [
+    { coworker: "Tom H.",   avatar: "TH", project: "Internal / Admin", task: "Team Meeting", hours: 1 },
+    { coworker: "Mia L.",   avatar: "ML", project: "Project Beta",     task: "Testing",      hours: 2 },
+  ],
+  Thu: [
+    { coworker: "Sarah K.", avatar: "SK", project: "Internal / Admin", task: "Standup",      hours: 0.5 },
+    { coworker: "Tom H.",   avatar: "TH", project: "Project Alpha",    task: "Planning",     hours: 1.5 },
+    { coworker: "Mia L.",   avatar: "ML", project: "Project Alpha",    task: "Code Review",  hours: 2 },
+  ],
+  Fri: [
+    { coworker: "Sarah K.", avatar: "SK", project: "Internal / Admin", task: "Standup", hours: 0.5 },
+  ],
+};
+
 const CALENDAR_EVENTS: Record<DayKey, Array<{ project: Project; from: string; to: string; note: string }>> = {
   Mon: [
     { project: "Internal / Admin", from: "09:00", to: "09:30", note: "Standup" },
@@ -245,30 +276,75 @@ function AddEntryModal({ defaultDay, days, onAdd, onClose }: {
   onAdd: (dayKey: DayKey, p: string, from: string, to: string, note: string) => void;
   onClose: () => void;
 }) {
-  const [project, setProject] = useState<string>(PROJECTS[0]);
-  const [day,     setDay]     = useState<string>(defaultDay);
-  const [from,    setFrom]    = useState("09:00");
-  const [to,      setTo]      = useState("10:00");
+  const [project, setProject] = useState<string>("");
+  const [task,    setTask]    = useState<string>("");
+  const [dayIdx,  setDayIdx]  = useState<number>(DAY_KEYS.indexOf(defaultDay));
+  const [hours,   setHours]   = useState<string>("");
   const [note,    setNote]    = useState("");
+
+  const day = DAY_KEYS[dayIdx];
+  const dayData = days[day];
 
   const weekHoursForProject = Object.values(days)
     .flatMap(d => d.blocks.filter(b => !b.isGhost && b.project === project))
     .reduce((s, b) => s + duration(b), 0);
 
+  const tasks = project ? PROJECT_TASKS[project as Project] : [];
+
+  const nudges = (COWORKER_NUDGES[day] ?? []).filter(
+    n => n.project === project && n.task === task
+  );
+
+  function parseHoursInput(val: string): number {
+    if (val.includes(":")) {
+      const [h, m] = val.split(":").map(Number);
+      return (isNaN(h) ? 0 : h) + (isNaN(m) ? 0 : m) / 60;
+    }
+    return parseFloat(val);
+  }
+
+  const parsedHours = parseHoursInput(hours);
+  const canSubmit = !!project && !!task && !!hours && parsedHours > 0;
+
+  function applyNudge(h: number) { setHours(String(h)); }
+
   function submit(e: React.FormEvent) {
     e.preventDefault();
-    onAdd(day as DayKey, project, from, to, note);
+    if (!canSubmit) return;
+    const from = "09:00";
+    const toH = 9 + parsedHours;
+    const toStr = `${String(Math.floor(toH)).padStart(2, "0")}:${toH % 1 >= 0.5 ? "30" : "00"}`;
+    onAdd(day, project, from, toStr, note);
     onClose();
   }
 
-  const inputCls = "w-full h-8 px-2.5 text-xs rounded-lg border bg-white focus:outline-none focus:ring-2 focus:ring-orange-200 font-medium placeholder:text-gray-300";
+  const inputCls = "w-full h-9 px-2.5 text-xs rounded-lg border bg-white focus:outline-none focus:ring-2 focus:ring-orange-200 font-medium placeholder:text-gray-300";
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ backgroundColor: "rgba(0,0,0,0.35)" }}
       onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
-      <div className="bg-white rounded-2xl shadow-2xl w-96 overflow-hidden" style={{ border: `1px solid ${BORDER}` }}>
-        <div className="px-5 py-4 border-b flex items-center justify-between" style={{ borderColor: BORDER }}>
+      <div className="bg-white rounded-2xl shadow-2xl w-[440px] overflow-hidden" style={{ border: `1px solid ${BORDER}` }}>
+
+        {/* Header with day navigation */}
+        <div className="px-5 py-3.5 border-b flex items-center justify-between" style={{ borderColor: BORDER }}>
           <h2 className="text-sm font-bold" style={{ color: TEXT }}>Add time entry</h2>
+          <div className="flex items-center gap-1">
+            <button type="button" onClick={() => setDayIdx(i => Math.max(0, i - 1))}
+              disabled={dayIdx === 0}
+              className="w-6 h-6 rounded flex items-center justify-center text-xs transition-colors"
+              style={{ color: dayIdx === 0 ? TEXT_3 : TEXT_2, opacity: dayIdx === 0 ? 0.35 : 1 }}
+              onMouseEnter={e => { if (dayIdx > 0) e.currentTarget.style.backgroundColor = BG_PAGE; }}
+              onMouseLeave={e => (e.currentTarget.style.backgroundColor = "transparent")}>‹</button>
+            <span className="text-xs font-semibold px-1 tabular-nums" style={{ color: TEXT, minWidth: 96, textAlign: "center" }}>
+              {DAY_LABELS[day]}, {dayData.date}
+            </span>
+            <button type="button" onClick={() => setDayIdx(i => Math.min(DAY_KEYS.length - 1, i + 1))}
+              disabled={dayIdx === DAY_KEYS.length - 1}
+              className="w-6 h-6 rounded flex items-center justify-center text-xs transition-colors"
+              style={{ color: dayIdx === DAY_KEYS.length - 1 ? TEXT_3 : TEXT_2, opacity: dayIdx === DAY_KEYS.length - 1 ? 0.35 : 1 }}
+              onMouseEnter={e => { if (dayIdx < DAY_KEYS.length - 1) e.currentTarget.style.backgroundColor = BG_PAGE; }}
+              onMouseLeave={e => (e.currentTarget.style.backgroundColor = "transparent")}>›</button>
+          </div>
           <button onClick={onClose} className="w-6 h-6 rounded flex items-center justify-center text-xs"
             style={{ color: TEXT_3 }}
             onMouseEnter={e => (e.currentTarget.style.backgroundColor = BG_PAGE)}
@@ -276,55 +352,86 @@ function AddEntryModal({ defaultDay, days, onAdd, onClose }: {
         </div>
 
         <form onSubmit={submit} className="px-5 py-4 space-y-3">
-          {/* Project + budget */}
-          <div>
-            <label className="text-[11px] font-semibold uppercase tracking-wide block mb-1" style={{ color: TEXT_3 }}>Project</label>
-            <Select value={project} onValueChange={v => v && setProject(v)}>
-              <SelectTrigger className="h-9 text-xs rounded-lg" style={{ borderColor: BORDER }}>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {PROJECTS.map(p => (
-                  <SelectItem key={p} value={p} className="text-xs">
-                    <span className="flex items-center gap-2">
-                      <span className="w-2 h-2 rounded-full" style={{ backgroundColor: PROJECT_COLOR[p as Project] }} />
-                      {p}
-                    </span>
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <BudgetBar project={project as Project} extraHours={weekHoursForProject} />
-          </div>
-
-          {/* Day */}
-          <div>
-            <label className="text-[11px] font-semibold uppercase tracking-wide block mb-1" style={{ color: TEXT_3 }}>Day</label>
-            <Select value={day} onValueChange={v => v && setDay(v)}>
-              <SelectTrigger className="h-8 text-xs rounded-lg" style={{ borderColor: BORDER }}>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {DAY_KEYS.map(k => (
-                  <SelectItem key={k} value={k} className="text-xs">{DAY_LABELS[k]} — {days[k].date}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-
-          {/* Time range */}
-          <div>
-            <label className="text-[11px] font-semibold uppercase tracking-wide block mb-1" style={{ color: TEXT_3 }}>Time</label>
-            <div className="flex items-center gap-2">
-              <input type="time" value={from} onChange={e => setFrom(e.target.value)}
-                className={cn(inputCls, "flex-1")} style={{ borderColor: BORDER }} />
-              <span className="text-xs" style={{ color: TEXT_3 }}>–</span>
-              <input type="time" value={to} onChange={e => setTo(e.target.value)}
-                className={cn(inputCls, "flex-1")} style={{ borderColor: BORDER }} />
-              <span className="text-xs font-semibold tabular-nums w-10" style={{ color: ORANGE }}>
-                {fmtHM(Math.max(0, parseTime(to) - parseTime(from)))}
-              </span>
+          {/* Project + Task — full width flex row */}
+          <div className="flex gap-2">
+            <div className="flex-1 min-w-0">
+              <label className="text-[11px] font-semibold uppercase tracking-wide block mb-1" style={{ color: TEXT_3 }}>
+                Project <span style={{ color: ORANGE }}>*</span>
+              </label>
+              <Select value={project} onValueChange={v => { if (v) { setProject(v); setTask(""); } }}>
+                <SelectTrigger className="h-9 text-xs rounded-lg w-full" style={{ borderColor: BORDER }}>
+                  <SelectValue placeholder="Select project…" />
+                </SelectTrigger>
+                <SelectContent>
+                  {PROJECTS.map(p => (
+                    <SelectItem key={p} value={p} className="text-xs">
+                      <span className="flex items-center gap-2">
+                        <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: PROJECT_COLOR[p as Project] }} />
+                        {p}
+                      </span>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
+            <div className="flex-1 min-w-0">
+              <label className="text-[11px] font-semibold uppercase tracking-wide block mb-1" style={{ color: TEXT_3 }}>
+                Task <span style={{ color: ORANGE }}>*</span>
+              </label>
+              <Select value={task} onValueChange={v => v && setTask(v)} disabled={!project}>
+                <SelectTrigger className="h-9 text-xs rounded-lg w-full" style={{ borderColor: BORDER, opacity: project ? 1 : 0.5 }}>
+                  <SelectValue placeholder={project ? "Select task…" : "Pick project first"} />
+                </SelectTrigger>
+                <SelectContent>
+                  {tasks.map(t => (
+                    <SelectItem key={t} value={t} className="text-xs">{t}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          {project && <BudgetBar project={project as Project} extraHours={weekHoursForProject} />}
+
+          {/* Hours */}
+          <div>
+            <label className="text-[11px] font-semibold uppercase tracking-wide block mb-1" style={{ color: TEXT_3 }}>
+              Hours <span style={{ color: ORANGE }}>*</span>
+            </label>
+            <div className="flex items-center gap-2">
+              <input
+                type="text" inputMode="decimal"
+                value={hours} onChange={e => setHours(e.target.value)}
+                placeholder="e.g. 1:30 or 2.5"
+                className={inputCls} style={{ borderColor: BORDER }}
+              />
+              {parsedHours > 0 && (
+                <span className="text-xs font-semibold tabular-nums whitespace-nowrap" style={{ color: ORANGE }}>
+                  {fmtHM(parsedHours)}
+                </span>
+              )}
+            </div>
+
+            {/* Coworker nudge */}
+            {nudges.length > 0 && (
+              <div className="mt-2 space-y-1.5">
+                {nudges.map((n, i) => (
+                  <button key={i} type="button"
+                    onClick={() => applyNudge(n.hours)}
+                    className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-left transition-colors"
+                    style={{ backgroundColor: "#FFF8F4", border: `1px solid #FBDECE` }}
+                    onMouseEnter={e => (e.currentTarget.style.backgroundColor = "#FEF0E8")}
+                    onMouseLeave={e => (e.currentTarget.style.backgroundColor = "#FFF8F4")}>
+                    <span className="w-5 h-5 rounded-full text-[9px] font-bold flex items-center justify-center flex-shrink-0 text-white"
+                      style={{ backgroundColor: ORANGE }}>{n.avatar}</span>
+                    <span className="text-[11px] flex-1" style={{ color: TEXT_2 }}>
+                      <span className="font-semibold" style={{ color: TEXT }}>{n.coworker}</span> logged {n.hours}h for this — use same?
+                    </span>
+                    <span className="text-[11px] font-semibold" style={{ color: ORANGE }}>{n.hours}h ↵</span>
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
 
           {/* Note */}
@@ -335,11 +442,11 @@ function AddEntryModal({ defaultDay, days, onAdd, onClose }: {
           </div>
 
           <div className="flex gap-2 pt-1">
-            <button type="submit"
+            <button type="submit" disabled={!canSubmit}
               className="flex-1 h-9 rounded-lg text-xs font-semibold text-white transition-colors"
-              style={{ backgroundColor: GREEN }}
-              onMouseEnter={e => (e.currentTarget.style.backgroundColor = "#376239")}
-              onMouseLeave={e => (e.currentTarget.style.backgroundColor = GREEN)}>
+              style={{ backgroundColor: canSubmit ? GREEN : "#C8D0D8", cursor: canSubmit ? "pointer" : "not-allowed" }}
+              onMouseEnter={e => { if (canSubmit) e.currentTarget.style.backgroundColor = "#376239"; }}
+              onMouseLeave={e => { e.currentTarget.style.backgroundColor = canSubmit ? GREEN : "#C8D0D8"; }}>
               Add entry
             </button>
             <button type="button" onClick={onClose}
