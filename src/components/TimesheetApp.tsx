@@ -463,68 +463,6 @@ function AddEntryModal({ defaultDay, days, onAdd, onClose }: {
 
 // ─── Click-to-add popover ─────────────────────────────────────────────────────
 
-function GridPopover({ dayKey, from, to, x, y, days, onAdd, onClose }: {
-  dayKey: DayKey; from: string; to: string; x: number; y: number;
-  days: Record<DayKey, DayData>;
-  onAdd: (p: string, from: string, to: string, note: string) => void;
-  onClose: () => void;
-}) {
-  const ref = useRef<HTMLDivElement>(null);
-  const W = 260;
-  const left = Math.min(x + 10, (typeof window !== "undefined" ? window.innerWidth : 1200) - W - 8);
-  const top  = Math.min(y - 16, (typeof window !== "undefined" ? window.innerHeight : 800) - 240);
-
-  const [project, setProject] = useState<string>(PROJECTS[0]);
-  const [fromT,   setFromT]   = useState(from);
-  const [toT,     setToT]     = useState(to);
-  const [note,    setNote]    = useState("");
-
-  const weekHrs = Object.values(days).flatMap(d => d.blocks.filter(b => !b.isGhost && b.project === project))
-    .reduce((s, b) => s + duration(b), 0);
-
-  useEffect(() => {
-    const handler = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) onClose(); };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, [onClose]);
-
-  const inputCls = "w-full h-7 px-2 text-xs rounded-md border bg-white focus:outline-none focus:ring-1 font-medium placeholder:text-gray-300";
-
-  return (
-    <div ref={ref} className="fixed z-50 bg-white rounded-xl border shadow-2xl p-3.5"
-      style={{ left, top, width: W, borderColor: BORDER }}>
-      <div className="flex items-center justify-between mb-2.5">
-        <span className="text-xs font-bold" style={{ color: TEXT }}>{DAY_LABELS[dayKey]}</span>
-        <button onClick={onClose} className="text-xs" style={{ color: TEXT_3 }}>✕</button>
-      </div>
-      <div className="space-y-2">
-        <Select value={project} onValueChange={v => v && setProject(v)}>
-          <SelectTrigger className="h-7 text-xs rounded-md" style={{ borderColor: BORDER }}><SelectValue /></SelectTrigger>
-          <SelectContent>
-            {PROJECTS.map(p => (
-              <SelectItem key={p} value={p} className="text-xs">
-                <span className="flex items-center gap-1.5">
-                  <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: PROJECT_COLOR[p as Project] }} />{p}
-                </span>
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        <BudgetBar project={project as Project} extraHours={weekHrs} />
-        <div className="flex gap-1 items-center">
-          <input type="time" value={fromT} onChange={e => setFromT(e.target.value)} className={cn(inputCls, "flex-1")} style={{ borderColor: BORDER }} />
-          <span className="text-gray-300 text-xs">–</span>
-          <input type="time" value={toT} onChange={e => setToT(e.target.value)} className={cn(inputCls, "flex-1")} style={{ borderColor: BORDER }} />
-        </div>
-        <input type="text" value={note} onChange={e => setNote(e.target.value)} placeholder="Notes" className={inputCls} style={{ borderColor: BORDER }} />
-        <button onClick={() => { onAdd(project, fromT, toT, note); onClose(); }}
-          className="w-full h-7 rounded-md text-xs font-semibold text-white"
-          style={{ backgroundColor: GREEN }}>Add entry</button>
-      </div>
-    </div>
-  );
-}
-
 // ─── Calendar events sidebar ──────────────────────────────────────────────────
 
 function CalendarSidebar({ selectedDay, allDays }: { selectedDay: DayKey; allDays: Record<DayKey, DayData> }) {
@@ -698,7 +636,65 @@ function CalBlock({ block, isGhost, showSuggestions, onAccept, onDismiss, onRemo
   );
 }
 
-// ─── Unified week/day grid ────────────────────────────────────────────────────
+// ─── Entry list row ───────────────────────────────────────────────────────────
+
+function EntryRow({ block, isGhost, showSuggestions, onAccept, onDismiss, onRemove, submitted }: {
+  block: TimeBlock; isGhost: boolean; showSuggestions: boolean;
+  onAccept?: () => void; onDismiss?: () => void; onRemove?: () => void; submitted?: boolean;
+}) {
+  if (isGhost && !showSuggestions) return null;
+  const color = PROJECT_COLOR[block.project as Project] ?? "#6B7280";
+  const bg    = PROJECT_BG[block.project as Project]    ?? "#F4F5F6";
+  const src   = SRC_BADGE[block.source];
+  const h     = duration(block);
+
+  return (
+    <div className={cn("group flex items-center gap-3 px-4 py-3 border-b last:border-0 transition-colors",
+      isGhost ? "opacity-75" : "")}
+      style={{
+        borderColor: BORDER,
+        backgroundColor: isGhost ? `${color}0A` : "white",
+        borderLeft: `3px solid ${isGhost ? `${color}60` : color}`,
+        borderStyle: isGhost ? "dashed" : undefined,
+      }}>
+      {/* Color dot */}
+      <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: color }} />
+
+      {/* Entry info */}
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="text-xs font-semibold" style={{ color: TEXT }}>{block.project}</span>
+          {src && <span className="text-[9px] font-bold px-1.5 py-0.5 rounded" style={{ backgroundColor: src.bg, color: src.color }}>{src.label}</span>}
+        </div>
+        {block.note && <div className="text-[11px] mt-0.5 truncate" style={{ color: TEXT_2 }}>{block.note}</div>}
+      </div>
+
+      {/* Hours */}
+      <span className="text-sm font-bold tabular-nums shrink-0" style={{ color: h > 0 ? TEXT : TEXT_3 }}>
+        {h > 0 ? fmtHM(h) : "—"}
+      </span>
+
+      {/* Ghost actions */}
+      {isGhost && (
+        <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
+          <button onClick={e => { e.stopPropagation(); onAccept?.(); }}
+            className="w-6 h-6 rounded-full text-white text-[10px] font-bold flex items-center justify-center" style={{ backgroundColor: GREEN }}>✓</button>
+          <button onClick={e => { e.stopPropagation(); onDismiss?.(); }}
+            className="w-6 h-6 rounded-full text-[10px] font-bold border flex items-center justify-center" style={{ borderColor: BORDER, color: TEXT_3, backgroundColor: "white" }}>✕</button>
+        </div>
+      )}
+
+      {/* Remove */}
+      {!isGhost && !submitted && (
+        <button onClick={e => { e.stopPropagation(); onRemove?.(); }}
+          className="w-6 h-6 rounded opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center text-[10px] shrink-0"
+          style={{ color: TEXT_3 }}>✕</button>
+      )}
+    </div>
+  );
+}
+
+// ─── Unified week/day list ────────────────────────────────────────────────────
 
 function TimeGrid({ days, viewMode, selectedDay, isCurrentWeek, todayKey, showSuggestions, loadingAI,
   onSelectDay, onAcceptGhost, onDismissGhost, onRemoveBlock, onGridClick, onChangeDayType }: {
@@ -712,155 +708,127 @@ function TimeGrid({ days, viewMode, selectedDay, isCurrentWeek, todayKey, showSu
   onGridClick: (e: React.MouseEvent, dayKey: DayKey) => void;
   onChangeDayType: (dayKey: DayKey, t: DayType) => void;
 }) {
-  const scrollRef = useRef<HTMLDivElement>(null);
   const visibleDays = viewMode === "day" ? [selectedDay] : DAY_KEYS;
-  const gridCols = `52px repeat(${visibleDays.length}, 1fr)`;
 
   return (
-    <div className="bg-white rounded-xl border overflow-hidden flex flex-col" style={{ borderColor: BORDER, boxShadow: "0 1px 4px rgba(0,0,0,0.05)" }}>
+    <div className="bg-white rounded-xl border overflow-hidden" style={{ borderColor: BORDER, boxShadow: "0 1px 4px rgba(0,0,0,0.05)" }}>
+      {/* Single grid — one column per day, header + entries stacked inside each cell */}
+      <div className="grid" style={{ gridTemplateColumns: `repeat(${visibleDays.length}, 1fr)` }}>
+        {visibleDays.map(k => {
+          const day = days[k];
+          const isToday = k === todayKey && isCurrentWeek;
+          const isSpecial = day.type !== "work";
+          const solidTotal = isSpecial ? 8 : day.blocks.filter(b => !b.isGhost).reduce((s, b) => s + duration(b), 0);
+          const isComplete = solidTotal >= 8;
+          const isPartial  = solidTotal >= 6 && solidTotal < 8;
+          const visibleGhosts = day.ghosts.filter(() => showSuggestions);
+          const isEmpty = !isSpecial && day.blocks.length === 0 && visibleGhosts.length === 0 && !loadingAI;
 
-      {/* ── Sticky column headers ── */}
-      <div className="sticky top-0 z-10 border-b bg-white" style={{ borderColor: BORDER }}>
-        <div className="grid" style={{ gridTemplateColumns: gridCols }}>
-          <div className="border-r" style={{ borderColor: BORDER }} />
-          {visibleDays.map(k => {
-            const day = days[k];
-            const isToday = k === todayKey && isCurrentWeek;
-            const solidTotal = day.type !== "work" ? 8 : day.blocks.filter(b => !b.isGhost).reduce((s, b) => s + duration(b), 0);
-            const isComplete = solidTotal >= 8;
-            const isPartial  = solidTotal >= 6 && solidTotal < 8;
+          return (
+            <div key={k} className="flex flex-col border-r last:border-r-0" style={{ borderColor: BORDER }}>
 
-            return (
-              <div key={k} className={cn("px-3 py-2.5 border-l", viewMode === "week" && "cursor-pointer")}
+              {/* ── Day header ── */}
+              <div
+                className={cn("px-4 py-3 border-b shrink-0", viewMode === "week" && "cursor-pointer hover:bg-gray-50")}
                 style={{
                   borderColor: BORDER,
-                  backgroundColor: day.type === "vacation" ? `${VACATION_BG}80`
-                    : day.type === "sick" ? `${SICK_BG}80`
-                    : isToday && isCurrentWeek ? "#F0F6FF" : "white",
-                  borderBottom: isToday && isCurrentWeek ? `2px solid #3B7DD8` : `2px solid transparent`,
+                  backgroundColor: isSpecial
+                    ? (day.type === "vacation" ? `${VACATION_BG}80` : `${SICK_BG}80`)
+                    : isToday ? "#F0F6FF" : "white",
+                  borderBottomWidth: isToday ? 2 : 1,
+                  borderBottomColor: isToday ? "#3B7DD8" : BORDER,
                 }}
                 onClick={() => viewMode === "week" && onSelectDay(k)}>
-                <div className="flex items-start justify-between gap-1">
+                <div className="flex items-start justify-between gap-2">
                   <div>
-                    {isToday && isCurrentWeek && (
-                      <div className="text-[8px] font-bold uppercase tracking-widest px-1 py-0.5 rounded inline-block mb-0.5" style={{ backgroundColor: "#3B7DD8", color: "white" }}>Today</div>
-                    )}
-                    <div className="text-xs font-bold" style={{ color: isToday && isCurrentWeek ? "#3B7DD8" : TEXT }}>{k}</div>
+                    {isToday && <div className="text-[8px] font-bold uppercase tracking-widest px-1 py-0.5 rounded inline-block mb-0.5" style={{ backgroundColor: "#3B7DD8", color: "white" }}>Today</div>}
+                    <div className="text-xs font-bold" style={{ color: isToday ? "#3B7DD8" : TEXT }}>{viewMode === "day" ? DAY_LABELS[k] : k}</div>
                     <div className="text-[10px]" style={{ color: TEXT_3 }}>{day.date}</div>
                   </div>
-                  <div className="text-right">
-                    <div className={cn("text-base font-bold tabular-nums leading-none",
+                  <div className="text-right shrink-0">
+                    <div className={cn("text-sm font-bold tabular-nums",
                       isComplete ? "text-emerald-600" : isPartial ? "text-amber-500" : solidTotal > 0 ? "text-red-400" : ""
                     )} style={solidTotal === 0 ? { color: "#C8C4BC" } : {}}>
-                      {day.type !== "work" ? "8:00" : fmtHM(solidTotal)}
+                      {isSpecial ? "8:00" : fmtHM(solidTotal)}
                     </div>
                     <div className="text-[9px]" style={{ color: TEXT_3 }}>/ 8:00</div>
                   </div>
                 </div>
-
-                {/* Day type selector */}
-                <div className="flex items-center gap-1 mt-1.5" onClick={e => e.stopPropagation()}>
-                  {(["work", "vacation", "sick"] as DayType[]).map(t => (
+                <div className="flex items-center mt-2 rounded-md overflow-hidden border text-[9px] font-semibold shrink-0"
+                  style={{ borderColor: BORDER }}
+                  onClick={e => e.stopPropagation()}>
+                  {(["work", "vacation", "sick"] as DayType[]).map((t, i) => (
                     <button key={t} onClick={() => onChangeDayType(k, t)}
-                      className="text-[9px] px-1.5 py-0.5 rounded font-semibold transition-all"
+                      className="flex-1 py-1 transition-all"
                       style={{
                         backgroundColor: day.type === t
-                          ? (t === "vacation" ? VACATION_BG : t === "sick" ? SICK_BG : `${ORANGE}20`)
-                          : "transparent",
+                          ? (t === "vacation" ? VACATION_BG : t === "sick" ? SICK_BG : `${ORANGE}18`)
+                          : "white",
                         color: day.type === t
                           ? (t === "vacation" ? VACATION_FG : t === "sick" ? SICK_FG : ORANGE)
                           : TEXT_3,
-                        border: `1px solid ${day.type === t ? (t === "vacation" ? VACATION_FG + "60" : t === "sick" ? SICK_FG + "60" : ORANGE + "60") : BORDER}`,
+                        borderRight: i < 2 ? `1px solid ${BORDER}` : "none",
+                        fontWeight: day.type === t ? 700 : 500,
                       }}>
-                      {t === "work" ? "Work" : t === "vacation" ? "🌴 Vacat." : "🤒 Sick"}
+                      {t === "work" ? "Work" : t === "vacation" ? "🌴" : "🤒"}
                     </button>
                   ))}
                 </div>
               </div>
-            );
-          })}
-        </div>
-      </div>
 
-      {/* ── Time grid body ── */}
-      <div ref={scrollRef} className="overflow-y-auto" style={{ maxHeight: "calc(100vh - 320px)" }}>
-        <div className="flex">
-
-          {/* Time axis */}
-          <div className="shrink-0 border-r" style={{ width: 52, height: TOTAL_H, position: "relative", borderColor: BORDER }}>
-            {HOURS.map(h => (
-              <div key={h} className="absolute flex items-start justify-end pr-2 w-full"
-                style={{ top: (h - CAL_START) * HOUR_PX, height: HOUR_PX }}>
-                <span className="text-[10px] tabular-nums -mt-2" style={{ color: TEXT_3 }}>
-                  {h < 12 ? `${h}` : h === 12 ? "12" : `${h - 12}`}
-                  <span className="text-[8px]">{h < 12 ? "AM" : "PM"}</span>
-                </span>
-              </div>
-            ))}
-          </div>
-
-          {/* Day columns */}
-          {visibleDays.map(dayKey => {
-            const day = days[dayKey];
-            const isToday = dayKey === todayKey && isCurrentWeek;
-            const isSpecial = day.type !== "work";
-
-            return (
-              <div key={dayKey}
-                className="flex-1 border-l relative"
-                style={{ height: TOTAL_H, borderColor: BORDER, backgroundColor: isToday && !isSpecial ? "#F8FAFF" : "white" }}
-                onClick={e => !isSpecial && !day.submitted && onGridClick(e, dayKey)}>
-
-                {/* Grid lines */}
-                {HOURS.map(h => (
-                  <div key={h}>
-                    <div className="absolute w-full border-t" style={{ top: (h - CAL_START) * HOUR_PX, borderColor: "#F0EDE8" }} />
-                    <div className="absolute w-full border-t border-dashed" style={{ top: (h - CAL_START) * HOUR_PX + HOUR_PX / 2, borderColor: "#F8F5F0" }} />
-                  </div>
-                ))}
-
-                {/* Vacation / Sick overlay */}
+              {/* ── Entries ── */}
+              <div className="flex-1 min-h-[120px]">
                 {isSpecial && (
-                  <div className="absolute inset-0 flex flex-col items-center justify-center z-10 pointer-events-none"
-                    style={{ backgroundColor: day.type === "vacation" ? `${VACATION_BG}90` : `${SICK_BG}90` }}>
-                    <span className="text-3xl mb-2">{day.type === "vacation" ? "🌴" : "🤒"}</span>
-                    <span className="text-sm font-bold" style={{ color: day.type === "vacation" ? VACATION_FG : SICK_FG }}>
+                  <div className="flex flex-col items-center justify-center py-10 h-full"
+                    style={{ backgroundColor: day.type === "vacation" ? `${VACATION_BG}60` : `${SICK_BG}60` }}>
+                    <span className="text-3xl mb-1">{day.type === "vacation" ? "🌴" : "🤒"}</span>
+                    <span className="text-xs font-semibold" style={{ color: day.type === "vacation" ? VACATION_FG : SICK_FG }}>
                       {day.type === "vacation" ? "Vacation" : "Sick leave"}
                     </span>
-                    <span className="text-xs mt-1" style={{ color: TEXT_3 }}>8:00 counted</span>
+                    <span className="text-[10px] mt-0.5" style={{ color: TEXT_3 }}>8:00 counted</span>
                   </div>
                 )}
-
-                {/* Ghost blocks */}
-                {!isSpecial && day.ghosts.map(block => (
-                  <CalBlock key={block.id} block={block} isGhost={true} showSuggestions={showSuggestions}
-                    onAccept={() => onAcceptGhost(dayKey, block.id)}
-                    onDismiss={() => onDismissGhost(dayKey, block.id)} />
-                ))}
-
-                {/* Solid blocks */}
-                {!isSpecial && day.blocks.map(block => (
-                  <CalBlock key={block.id} block={block} isGhost={false} showSuggestions={showSuggestions}
-                    onRemove={() => onRemoveBlock(dayKey, block.id)} submitted={day.submitted} />
-                ))}
-
-                {/* Loading */}
-                {loadingAI === dayKey && (
-                  <div className="absolute inset-0 flex items-center justify-center" style={{ backgroundColor: `${ORANGE}08` }}>
-                    <span className="w-5 h-5 rounded-full border-2" style={{ borderColor: `${ORANGE}30`, borderTopColor: ORANGE, animation: "spin 0.7s linear infinite" }} />
-                  </div>
-                )}
-
-                {/* No time reported */}
-                {!isSpecial && day.blocks.length === 0 && day.ghosts.filter(g => showSuggestions).length === 0 && !loadingAI && (
-                  <div className="absolute top-4 inset-x-0 flex justify-center pointer-events-none">
-                    <span className="text-[10px]" style={{ color: TEXT_3 }}>No time reported</span>
-                  </div>
+                {!isSpecial && (
+                  <>
+                    {day.blocks.map(block => (
+                      <EntryRow key={block.id} block={block} isGhost={false} showSuggestions={showSuggestions}
+                        onRemove={() => onRemoveBlock(k, block.id)} submitted={day.submitted} />
+                    ))}
+                    {visibleGhosts.map(block => (
+                      <EntryRow key={block.id} block={block} isGhost={true} showSuggestions={showSuggestions}
+                        onAccept={() => onAcceptGhost(k, block.id)}
+                        onDismiss={() => onDismissGhost(k, block.id)} />
+                    ))}
+                    {loadingAI === k && (
+                      <div className="flex items-center justify-center py-8">
+                        <span className="w-5 h-5 rounded-full border-2" style={{ borderColor: `${ORANGE}30`, borderTopColor: ORANGE, animation: "spin 0.7s linear infinite" }} />
+                      </div>
+                    )}
+                    {isEmpty && (
+                      <button className="w-full h-full flex items-center justify-center py-10 text-[11px] transition-colors"
+                        style={{ color: TEXT_3 }}
+                        onMouseEnter={e => (e.currentTarget.style.backgroundColor = BG_PAGE)}
+                        onMouseLeave={e => (e.currentTarget.style.backgroundColor = "transparent")}
+                        onClick={e => !day.submitted && onGridClick(e, k)}>
+                        + Add entry
+                      </button>
+                    )}
+                    {!isEmpty && !day.submitted && (
+                      <button className="w-full flex items-center gap-2 px-4 py-2 text-[11px] transition-colors opacity-0 hover:opacity-100"
+                        style={{ color: TEXT_3 }}
+                        onMouseEnter={e => (e.currentTarget.style.backgroundColor = BG_PAGE)}
+                        onMouseLeave={e => (e.currentTarget.style.backgroundColor = "transparent")}
+                        onClick={e => onGridClick(e, k)}>
+                        + Add entry
+                      </button>
+                    )}
+                  </>
                 )}
               </div>
-            );
-          })}
-        </div>
+
+            </div>
+          );
+        })}
       </div>
     </div>
   );
@@ -927,10 +895,9 @@ export default function TimesheetApp() {
     return ({ 1: "Mon", 2: "Tue", 3: "Wed", 4: "Thu", 5: "Fri" } as Record<number, DayKey>)[dow] ?? "Mon";
   });
   const [showSuggestions,  setShowSuggestions]  = useState(true);
-  const [showAddModal,     setShowAddModal]     = useState(false);
+  const [addModalDay,      setAddModalDay]      = useState<DayKey | null>(null);
   const [daysByWeek,       setDaysByWeek]       = useState<Record<number, Record<DayKey, DayData>>>({ 0: buildDays(0) });
   const [loadingAI,        setLoadingAI]        = useState<DayKey | null>(null);
-  const [gridPopover,      setGridPopover]      = useState<{ dayKey: DayKey; from: string; to: string; x: number; y: number } | null>(null);
   const timeoutRefs = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
   useEffect(() => () => { timeoutRefs.current.forEach(clearTimeout); }, []);
 
@@ -1018,7 +985,7 @@ export default function TimesheetApp() {
     const snapped = Math.floor(rawH * 2) / 2;
     const from = hourToTime(Math.max(CAL_START, Math.min(CAL_END - 1, snapped)));
     const to   = hourToTime(Math.min(CAL_END, snapped + 1));
-    setGridPopover({ dayKey, from, to, x: e.clientX, y: e.clientY });
+    setAddModalDay(dayKey);
   }
 
   const submittedAll = Object.values(days).every(d => d.submitted);
@@ -1128,7 +1095,7 @@ export default function TimesheetApp() {
             </div>
 
             {/* + Add entry */}
-            <button onClick={() => setShowAddModal(true)}
+            <button onClick={() => setAddModalDay(selectedDay)}
               className="h-8 px-4 rounded-lg text-xs font-semibold text-white flex items-center gap-1.5"
               style={{ backgroundColor: GREEN }}
               onMouseEnter={e => (e.currentTarget.style.backgroundColor = "#376239")}
@@ -1215,21 +1182,12 @@ export default function TimesheetApp() {
       {/* ── Week progress footer ── */}
       <WeekProgress days={days} />
 
-      {/* ── Modals / popovers ── */}
-      {showAddModal && (
+      {/* ── Modal ── */}
+      {addModalDay && (
         <AddEntryModal
-          defaultDay={selectedDay} days={days}
-          onAdd={(dayKey, p, f, t, n) => { addBlock(dayKey, p, f, t, n); setShowAddModal(false); }}
-          onClose={() => setShowAddModal(false)}
-        />
-      )}
-
-      {gridPopover && (
-        <GridPopover
-          dayKey={gridPopover.dayKey} from={gridPopover.from} to={gridPopover.to}
-          x={gridPopover.x} y={gridPopover.y} days={days}
-          onAdd={(p, f, t, n) => { addBlock(gridPopover.dayKey, p, f, t, n); setGridPopover(null); }}
-          onClose={() => setGridPopover(null)}
+          defaultDay={addModalDay} days={days}
+          onAdd={(dayKey, p, f, t, n) => { addBlock(dayKey, p, f, t, n); setAddModalDay(null); }}
+          onClose={() => setAddModalDay(null)}
         />
       )}
     </div>
