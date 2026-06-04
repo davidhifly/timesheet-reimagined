@@ -741,7 +741,7 @@ function TimeGrid({ days, viewMode, selectedDay, isCurrentWeek, todayKey, showSu
                 onClick={() => viewMode === "week" && onSelectDay(k)}>
                 <div className="flex items-start justify-between gap-2">
                   <div>
-                    {isToday && <div className="text-[8px] font-bold uppercase tracking-widest px-1 py-0.5 rounded inline-block mb-0.5" style={{ backgroundColor: "#3B7DD8", color: "white" }}>Today</div>}
+                    <div className={cn("text-[8px] font-bold uppercase tracking-widest px-1 py-0.5 rounded inline-block mb-0.5", !isToday && "invisible")} style={{ backgroundColor: "#3B7DD8", color: "white" }}>Today</div>
                     <div className="text-xs font-bold" style={{ color: isToday ? "#3B7DD8" : TEXT }}>{viewMode === "day" ? DAY_LABELS[k] : k}</div>
                     <div className="text-[10px]" style={{ color: TEXT_3 }}>{day.date}</div>
                   </div>
