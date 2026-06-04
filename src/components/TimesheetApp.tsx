@@ -528,6 +528,7 @@ function GridPopover({ dayKey, from, to, x, y, days, onAdd, onClose }: {
 // ─── Calendar events sidebar ──────────────────────────────────────────────────
 
 function CalendarSidebar({ selectedDay, allDays }: { selectedDay: DayKey; allDays: Record<DayKey, DayData> }) {
+  const [collapsed, setCollapsed] = useState(false);
   const events = CALENDAR_EVENTS[selectedDay] ?? [];
 
   // Project totals for summary chart
@@ -541,14 +542,39 @@ function CalendarSidebar({ selectedDay, allDays }: { selectedDay: DayKey; allDay
   const maxH = Math.max(...Array.from(projectTotals.values()), 0.1);
   const weekTotal = Array.from(projectTotals.values()).reduce((s, h) => s + h, 0);
 
+  if (collapsed) {
+    return (
+      <div className="shrink-0 flex flex-col items-center pt-1" style={{ width: 28 }}>
+        <button
+          onClick={() => setCollapsed(false)}
+          className="w-7 h-7 rounded-lg flex items-center justify-center transition-colors"
+          title="Expand sidebar"
+          style={{ color: TEXT_3, backgroundColor: "transparent" }}
+          onMouseEnter={e => (e.currentTarget.style.backgroundColor = BORDER)}
+          onMouseLeave={e => (e.currentTarget.style.backgroundColor = "transparent")}>
+          ›
+        </button>
+      </div>
+    );
+  }
+
   return (
     <div className="w-56 shrink-0 flex flex-col gap-0 overflow-y-auto" style={{ maxHeight: "calc(100vh - 160px)" }}>
 
       {/* Google Calendar events */}
       <div className="bg-white rounded-xl border overflow-hidden mb-3" style={{ borderColor: BORDER }}>
         <div className="px-3 py-2.5 border-b flex items-center gap-2" style={{ borderColor: BORDER }}>
-          <span className="text-xs font-bold" style={{ color: TEXT }}>Calendar</span>
+          <span className="text-xs font-bold flex-1" style={{ color: TEXT }}>Calendar</span>
           <span className="text-[9px] px-1.5 py-0.5 rounded-full font-medium" style={{ backgroundColor: "#EDF4FF", color: "#3B7DD8" }}>Google</span>
+          <button
+            onClick={() => setCollapsed(true)}
+            className="w-5 h-5 rounded flex items-center justify-center ml-1 transition-colors"
+            title="Collapse sidebar"
+            style={{ color: TEXT_3 }}
+            onMouseEnter={e => (e.currentTarget.style.backgroundColor = BG_PAGE)}
+            onMouseLeave={e => (e.currentTarget.style.backgroundColor = "transparent")}>
+            ‹
+          </button>
         </div>
         <div className="px-3 py-2 space-y-1.5">
           {events.length === 0 ? (
@@ -1130,31 +1156,48 @@ export default function TimesheetApp() {
 
           {/* Grid */}
           <div className="flex-1 min-w-0">
-            {/* Day selector in day view */}
-            {viewMode === "day" && (
-              <div className="flex items-center gap-1.5 mb-3">
-                {DAY_KEYS.map(k => {
-                  const isToday = k === todayKey && weekOffset === 0;
-                  const day = days[k];
-                  const isSel = k === selectedDay;
-                  return (
-                    <button key={k} onClick={() => setSelectedDay(k)}
-                      className="flex-1 py-2 rounded-lg text-xs font-semibold border transition-all"
-                      style={{
-                        borderColor: isSel ? ORANGE : BORDER,
-                        color: isSel ? ORANGE : isToday ? "#3B7DD8" : TEXT_2,
-                        backgroundColor: isSel ? `${ORANGE}10` : "white",
-                        textDecoration: isToday ? "underline" : "none",
-                        textUnderlineOffset: "2px",
-                      }}>
-                      {k}
-                      {day.type === "vacation" && " 🌴"}
-                      {day.type === "sick" && " 🤒"}
-                    </button>
-                  );
-                })}
-              </div>
-            )}
+            {/* Day view header */}
+            {viewMode === "day" && (() => {
+              const dayIdx = DAY_KEYS.indexOf(selectedDay);
+              const dayData = days[selectedDay];
+              const isToday = selectedDay === todayKey && weekOffset === 0;
+              const loggedH = dayData.blocks.filter(b => !b.isGhost).reduce((s, b) => s + duration(b), 0);
+              return (
+                <div className="flex items-center gap-3 mb-4 px-1">
+                  <button
+                    onClick={() => setSelectedDay(DAY_KEYS[dayIdx - 1])}
+                    disabled={dayIdx === 0}
+                    className="w-7 h-7 rounded-lg flex items-center justify-center text-sm font-medium transition-colors"
+                    style={{ color: dayIdx === 0 ? TEXT_3 : TEXT_2, opacity: dayIdx === 0 ? 0.35 : 1, backgroundColor: "transparent" }}
+                    onMouseEnter={e => { if (dayIdx > 0) e.currentTarget.style.backgroundColor = BORDER; }}
+                    onMouseLeave={e => (e.currentTarget.style.backgroundColor = "transparent")}>
+                    ‹
+                  </button>
+                  <div className="flex-1 text-center">
+                    <div className="flex items-center justify-center gap-2">
+                      <span className="text-base font-bold" style={{ color: isToday ? "#3B7DD8" : TEXT }}>
+                        {DAY_LABELS[selectedDay]}
+                      </span>
+                      <span className="text-sm font-medium" style={{ color: TEXT_3 }}>{dayData.date}</span>
+                      {dayData.type === "vacation" && <span className="text-sm">🌴</span>}
+                      {dayData.type === "sick"     && <span className="text-sm">🤒</span>}
+                    </div>
+                    <div className="text-xs mt-0.5" style={{ color: loggedH > 0 ? ORANGE : TEXT_3 }}>
+                      {loggedH > 0 ? `${fmtHM(loggedH)} logged` : "Nothing logged yet"}
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => setSelectedDay(DAY_KEYS[dayIdx + 1])}
+                    disabled={dayIdx === DAY_KEYS.length - 1}
+                    className="w-7 h-7 rounded-lg flex items-center justify-center text-sm font-medium transition-colors"
+                    style={{ color: dayIdx === DAY_KEYS.length - 1 ? TEXT_3 : TEXT_2, opacity: dayIdx === DAY_KEYS.length - 1 ? 0.35 : 1, backgroundColor: "transparent" }}
+                    onMouseEnter={e => { if (dayIdx < DAY_KEYS.length - 1) e.currentTarget.style.backgroundColor = BORDER; }}
+                    onMouseLeave={e => (e.currentTarget.style.backgroundColor = "transparent")}>
+                    ›
+                  </button>
+                </div>
+              );
+            })()}
 
             <TimeGrid
               days={days} viewMode={viewMode} selectedDay={selectedDay}
